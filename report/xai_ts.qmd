@@ -1,0 +1,360 @@
+---
+title: "XAI on Time Series Forecasting Models"
+author: "Marco Zanotti"
+date: "2023-10-23"
+format: 
+  html:
+    embed-resources: true
+    smooth-scroll: true
+    theme: darkly
+    toc: true
+    toc-location: left
+    toc-title: "Contents"
+    toc-depth: 3
+---
+
+```{r logo, echo=FALSE}
+htmltools::img(
+	src = knitr::image_uri("img/logo-giallo.png"), 
+  alt = 'logo', 
+	style = 'position:absolute; top:0; right:0; padding:10px;'
+)
+```
+
+```{r options, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  message = FALSE, 
+  warning = FALSE
+)
+
+n_cores <- parallel::detectCores()
+future::plan("multisession", workers = n_cores)
+```
+
+
+# Setup 
+
+```{r installs, eval=FALSE}
+install.packages("tidyverse")
+install.packages("timetk")
+install.packages("tidymodels")
+install.packages("modeltime")
+install.packages("modeltime.h2o")
+install.packages("h2o")
+install.packages("DALEX")
+install.packages("DALEXtra")
+install.packages("lime")
+```
+
+```{r load}
+library(tidyverse)
+library(timetk)
+library(tidymodels)
+library(modeltime)
+library(modeltime.h2o)
+library(h2o)
+library(DALEX)
+library(DALEXtra)
+library(lime)
+```
+
+
+
+# Data 
+
+The data used is a sample from the M4 competition.
+
+
+## Import
+```{r import}
+m4 <- read_csv("../data/m4.csv", show_col_types = FALSE)
+head(m4)
+```
+
+
+## Visualization 
+
+```{r ts plot, fig.align='center'}
+freq <- "Hourly"
+ts_id <- "H413"
+m4_ts <- m4 |> 
+	filter(period == freq, id == ts_id) |> 
+	select(-id, -type, -period)
+m4_ts |> 
+	plot_time_series(
+		.date_var = date, .value = value, 
+		.smooth = FALSE, .title = "", .interactive = FALSE
+	)
+```
+
+
+## Feature Engineering
+
+```{r parameters}
+horizon <- 48
+lag_period <- 48
+rolling_periods <- c(12, 24)
+```
+
+
+```{r feateng}
+m4_ts_prep <- m4_ts |> 
+	# standardization
+	mutate(value = standardize_vec(value)) |>  
+	# add lags
+	tk_augment_lags(value, .lags = lag_period) |>
+	# add rolling features
+	tk_augment_slidify(
+		value_lag48, mean, .period = rolling_periods, .align = "center", .partial = TRUE
+	) |>
+	rename_with(~ str_remove_all(., "(value_)|(lag48_)")) |> 
+	rename_with(~ str_remove_all(., "_")) |> 
+	# calendar features
+	tk_augment_timeseries_signature(date) |> 
+	select(-matches("(diff)|(iso)|(xts)|(lbl)|(year)|(half)|(quarter)|(minute)|(second)|(hour12)|(qday)|(yday)")) |> 
+	mutate(index.num = standardize_vec(index.num)) |> 
+	# fourier series
+	tk_augment_fourier(date, .periods = rolling_periods, .K = 2) |> 
+	rename_with(~ str_remove_all(., "date_")) |> 
+	# drop na
+	drop_na()
+glimpse(m4_ts_prep)
+```
+
+	
+## Train / Test Sets
+
+```{r split, fig.align='center'}
+splits <- m4_ts_prep |> 
+	time_series_split(assess = horizon, cumulative = TRUE)
+splits |>
+	tk_time_series_cv_plan() |>
+	plot_time_series_cv_plan(date, value, .interactive = FALSE)
+```
+
+
+
+# Modelling
+
+## H2O Setup
+
+```{r h2oinit}
+Sys.setenv(JAVA_HOME = "/usr/lib/jvm/jdk-17/")
+h2o.init()
+h2o.no_progress() 
+```
+
+
+## Engine
+
+Algorithms:
+- DRF (This includes both the Distributed Random Forest (DRF) and
+Extremely Randomized Trees (XRT) models.
+- GLM (Generalized Linear Model with regularization)
+- XGBoost (XGBoost GBM)
+- GBM (H2O GBM)
+- DeepLearning (Fully-connected multi-layer artificial neural network)
+- StackedEnsemble (Stacked Ensembles, includes an ensemble of all the
+base models and ensembles using subsets of the base models)
+
+```{r engine}
+model_spec_h2o <- automl_reg(mode = "regression") |>
+	set_engine(
+		engine = "h2o",
+		max_runtime_secs = 90,
+		max_runtime_secs_per_model = 30,
+		max_models = 20,
+		nfolds = 5,
+		sort_metric = "rmse",
+		verbosity = NULL,
+		seed = 123
+	)
+```
+
+
+```{r recipe}
+rcp_spec <- recipe(value ~ ., data = training(splits))
+```
+
+
+## Workflows
+
+This step will take some time depending on your engine specifications
+```{r workflow fit}
+wrkfl_fit_h2o <- workflow() |>
+	add_model(model_spec_h2o) |>
+	add_recipe(rcp_spec) |>
+	fit(training(splits))
+```
+
+```{r leader}
+wrkfl_fit_h2o |> automl_leaderboard() |> head(20)
+```
+
+
+## Calibration, Evaluation & Plotting
+
+Function to calibrate models, evaluate their accuracy and plot results
+```{r function}
+calibrate_evaluate_plot <- function(
+		..., splits, actual_data, type = "testing", updated_desc = NULL
+) {
+	
+	if (type == "testing") {
+		new_data <- testing(splits)
+	} else {
+		new_data <- training(splits) |> drop_na()
+	}
+	
+	calibration_tbl <- modeltime_table(...)
+	
+	if (!is.null(updated_desc)) {
+		for (i in seq_along(updated_desc)) {
+			calibration_tbl <- calibration_tbl |> 
+				update_model_description(.model_id = i, .new_model_desc = updated_desc[i])
+		}
+	}
+	
+	calibration_tbl <- calibration_tbl |> 
+		modeltime_calibrate(new_data)
+	
+	print(calibration_tbl |> modeltime_accuracy())
+	
+	print(
+		calibration_tbl |> 
+			modeltime_forecast(new_data = new_data, actual_data = actual_data) %>%
+			plot_modeltime_forecast(.conf_interval_show = FALSE, .interactive = FALSE)
+	)
+	
+	return(invisible(calibration_tbl))
+	
+}
+```
+
+
+```{r evaluation, fig.align='center'}
+calibrate_evaluate_plot(
+	wrkfl_fit_h2o, 
+	splits = splits, 
+	actual_data = m4_ts_prep
+)
+```
+
+
+
+# XAI
+
+## Explainer
+
+```{r explainer}
+explainer_h2o_automl <- explain_h2o(
+	model = wrkfl_fit_h2o$fit$fit, 
+	data = testing(splits),
+	y = testing(splits)$value,
+	label = "h2o automl",
+	type = "regression",
+	colorize = FALSE
+)
+```
+
+
+## Model Performance
+
+```{r model performance, fig.align='center'}
+mp_h2o_automl <- model_performance(explainer_h2o_automl)
+plot(mp_h2o_automl, geom = "boxplot")
+```
+
+
+## Feature Importance
+
+```{r feature importance, fig.align='center'}
+fe_h2o_automl <- model_parts(explainer_h2o_automl)
+plot(fe_h2o_automl)
+```
+
+
+## Variable Response
+
+There are two main types of plots: Partial Dependence plot and Accumulated 
+Local Effects plot designed for the sake of exploring the relation between a 
+variable with the model outcome (in our case: year_of_birth)
+
+Partial Dependence
+```{r partial dependence, fig.align='center'}
+pdp_h2o_automl <- model_profile(
+	explainer_h2o_automl, 
+	variable = "hour", 
+	type = "partial"
+)
+plot(pdp_h2o_automl)
+```
+
+
+Accumulated Local Effect
+```{r accumulated effect, fig.align='center'}
+ale_h2o_automl <- model_profile(
+	explainer_h2o_automl,
+	variable = "hour", 
+	type = "accumulated"
+)
+plot(ale_h2o_automl)
+```
+
+
+## Prediction Understanding
+
+```{r test obs}
+new_value <- testing(splits) |> 
+	filter(date == ymd_hms("2017-07-23 02:00:00"))
+# new_value <- testing(splits) |> 
+# 	filter(date == ymd_hms("2017-07-24 04:00:00"))
+```
+
+
+Break Down
+https://medium.com/responsibleml/basic-xai-with-dalex-part-4-break-down-method-2cd4de43abdd
+```{r break down, fig.align='center'}
+pb_h2o_automl <- predict_parts(
+	explainer_h2o_automl,
+	new_observation = new_value,
+	type = "break_down"
+)
+plot(pb_h2o_automl)
+```
+
+
+Shap
+https://medium.com/responsibleml/basic-xai-with-dalex-part-5-shapley-values-85ceb4b58c99
+```{r shap, fig.align='center'}
+shap_h2o_automl <- predict_parts(
+	explainer_h2o_automl,
+	new_observation = new_value,
+	type = "shap"
+)
+plot(shap_h2o_automl)
+```
+
+
+Lime
+https://medium.com/responsibleml/basic-xai-with-dalex-part-6-lime-method-f6aab0af058a
+
+```{r lime, fig.align='center'}
+model_type.dalex_explainer <- DALEXtra::model_type.dalex_explainer
+predict_model.dalex_explainer <- DALEXtra::predict_model.dalex_explainer
+
+lime_h2o_automl <- predict_surrogate(
+	explainer = explainer_h2o_automl, 
+	new_observation = new_value, 
+	n_features = 12, 
+	n_permutations = 1000,
+	type = "lime"
+)
+plot(lime_h2o_automl)
+```
+
+
+```{r h2o shut}
+h2o.shutdown(prompt = FALSE)
+```

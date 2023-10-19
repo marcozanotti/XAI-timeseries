@@ -18,6 +18,6 @@ Business course.
 
 ![R code (download)](R/xai_ts.R)  
 
-![Notebook (download)](R/xai_ts.R)
+![Notebook (download)](report/xai_ts.qmd)
 
-![Notebook](R/xai_ts.R)
+![Notebook](report/xai_ts.html)

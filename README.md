@@ -6,8 +6,8 @@
 Repository containing the code for the project of the Explainable AI for
 Business course.
 
-[R code (download)](R/xai_ts.R)
+[R code](R/xai_ts.R)
 
-[Notebook (download)](report/xai_ts.qmd)
+[Notebook](report/xai_ts.qmd)
 
-[Notebook](report/xai_ts.html)
+[Notebook](https://marcozanotti.github.io/XAI-timeseries/report/xai_ts.html)

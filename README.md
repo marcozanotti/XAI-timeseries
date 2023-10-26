@@ -8,7 +8,7 @@ Business course.
 
 [R code](R/xai_ts.R)
 
-[Report (qmd)](report/xai_ts.qmd)
+[Report (qmd)](report/xai_ts_report.qmd)
 
 [Report
 (html)](https://marcozanotti.github.io/XAI-timeseries/report/xai_ts_report.html)

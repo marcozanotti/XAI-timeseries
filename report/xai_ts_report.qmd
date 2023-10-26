@@ -181,6 +181,7 @@ rcp_spec <- recipe(value ~ ., data = training(splits))
 ## Workflows
 
 This step will take some time depending on your engine specifications
+
 ```{r workflow fit}
 wrkfl_fit_h2o <- workflow() |>
 	add_model(model_spec_h2o) |>

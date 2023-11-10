@@ -1,7 +1,7 @@
 ---
-title: "XAI on Time Series Forecasting Models"
+title: "XAI on Time Series Forecasting"
 author: "Marco Zanotti"
-date: "2023-10-23"
+date: "2023-11-10"
 format: 
   html:
     embed-resources: true
@@ -63,42 +63,46 @@ library(lime)
 
 # Data 
 
-The data used is a sample from the M4 competition.
+The data used is an **hourly time series** from the **M4 competition**. 
+The M4 competition is a large scale forecasting competition organized by 
+Spyros Makridakis and his team. The competition was held in 2018 and the data 
+is available on the [M4 competition website](https://www.m4.unic.ac.cy/the-dataset/). 
+A sample of the data is available in the `data` folder of this repository.
 
 
-## Import
-```{r import}
-m4 <- read_csv("../data/m4.csv", show_col_types = FALSE)
-head(m4)
-```
+## Import & Visualization
 
+```{r import, fig.align='center'}
+m4 <- read_csv("../data/m4.csv")
 
-## Visualization 
-
-```{r ts plot, fig.align='center'}
 freq <- "Hourly"
 ts_id <- "H413"
 m4_ts <- m4 |> 
-	filter(period == freq, id == ts_id) |> 
+	filter(period == freq & id == ts_id) |> 
 	select(-id, -type, -period)
+
 m4_ts |> 
 	plot_time_series(
 		.date_var = date, .value = value, 
-		.smooth = FALSE, .title = "", .interactive = FALSE
+		.smooth = FALSE, .title = ts_id, .interactive = FALSE
 	)
 ```
 
 
 ## Feature Engineering
 
-```{r parameters}
-horizon <- 48
-lag_period <- 48
-rolling_periods <- c(12, 24)
-```
-
+In order to be able to use data in a machine learning model, we need to 
+create features that can be used as predictors. This step is extremely 
+relevant in time series data, since we need to create **features that are able to
+capture the time dynamics of the data**. There exists a number of possible 
+features that can be created; here I am using **lags, rolling features, calendar 
+features and fourier series**, obtaining a total of **24 features**. 
 
 ```{r feateng}
+horizon <- 48 # the forecast horizon, 2 days
+lag_period <- 48 # 48h
+rolling_periods <- c(12, 24) # 12h, 24h
+
 m4_ts_prep <- m4_ts |> 
 	# standardization
 	mutate(value = standardize_vec(value)) |>  
@@ -113,145 +117,174 @@ m4_ts_prep <- m4_ts |>
 	# calendar features
 	tk_augment_timeseries_signature(date) |> 
 	select(-matches("(diff)|(iso)|(xts)|(lbl)|(year)|(half)|(quarter)|(minute)|(second)|(hour12)|(qday)|(yday)")) |> 
-	mutate(index.num = standardize_vec(index.num)) |> 
+	mutate(
+		index.num = standardize_vec(index.num),
+		am.pm = as.factor(am.pm),
+	) |> 
 	# fourier series
 	tk_augment_fourier(date, .periods = rolling_periods, .K = 2) |> 
 	rename_with(~ str_remove_all(., "date_")) |> 
 	# drop na
 	drop_na()
-glimpse(m4_ts_prep)
+glimpse(m4_ts_prep)	
 ```
 
-	
-## Train / Test Sets
+
+## Train & Test Sets
+
+The data is then split considering a **test set of 2 days** to evaluate the 
+models' performances. 
 
 ```{r split, fig.align='center'}
 splits <- m4_ts_prep |> 
 	time_series_split(assess = horizon, cumulative = TRUE)
 splits |>
 	tk_time_series_cv_plan() |>
-	plot_time_series_cv_plan(date, value, .interactive = FALSE)
+	plot_time_series_cv_plan(
+		date, value, .interactive = FALSE, .title = "Train-Test Split"
+	)
 ```
 
 
 
 # Modelling
 
+ML models are estimated using an **AutoML approach**, which allows to 
+efficiently estimate a large number of models and select the best one. The 
+AutoML approach is performed using [**h2o**](https://h2o.ai/).
+
+
 ## H2O Setup
 
-```{r h2oinit}
-Sys.setenv(JAVA_HOME = "/usr/lib/jvm/jdk-17/")
-h2o.init()
-h2o.no_progress() 
+To use h2o, we need to initialize the Java Virtual Machine.  
+
+```{r h2o init, include=FALSE}
+Sys.setenv(JAVA_HOME = "/usr/lib/jvm/jdk-17/") # set java home path
+h2o.init() # initialize h2o
+h2o.no_progress() # disable progress bars
+```
+
+```{r h2o init 2, eval=FALSE}
+Sys.setenv(JAVA_HOME = "/usr/lib/jvm/jdk-17/") # set java home path
+h2o.init() # initialize h2o
+h2o.no_progress() # disable progress bars
+```
+
+then, the data needs to be converted to h2o format  
+
+```{r h2o data}
+train_h2o <- as.h2o(training(splits)) # convert train data to h2o
+test_h2o <- as.h2o(testing(splits)) # convert test data to h2o
+```
+
+and we need to specify the target variable and the predictors.  
+
+```{r h2o vars}
+target <- "value"
+x_vars <- setdiff(names(train_h2o), c(target, "date"))
 ```
 
 
-## Engine
+## AutoML
 
-Algorithms:
+**h2o** automatically estimates and tests **6 different ML algorithms**:  
+
 - DRF (This includes both the Distributed Random Forest (DRF) and
-Extremely Randomized Trees (XRT) models.
-- GLM (Generalized Linear Model with regularization)
-- XGBoost (XGBoost GBM)
-- GBM (H2O GBM)
-- DeepLearning (Fully-connected multi-layer artificial neural network)
+Extremely Randomized Trees (XRT) models)  
+
+- GLM (Generalized Linear Model with regularization)  
+
+- XGBoost (XGBoost GBM)  
+
+- GBM (H2O GBM)  
+
+- DeepLearning (Fully-connected multi-layer artificial neural network)  
+
 - StackedEnsemble (Stacked Ensembles, includes an ensemble of all the
-base models and ensembles using subsets of the base models)
+base models and ensembles using subsets of the base models)  
 
-```{r engine}
-model_spec_h2o <- automl_reg(mode = "regression") |>
-	set_engine(
-		engine = "h2o",
-		max_runtime_secs = 90,
-		max_runtime_secs_per_model = 30,
-		max_models = 20,
-		nfolds = 5,
-		sort_metric = "rmse",
-		verbosity = NULL,
-		seed = 123
-	)
-```
+All this models are estimated using a 5-fold cross validation (since the data
+in not too large) and the best model is selected based on the RMSE metric.  
 
-
-```{r recipe}
-rcp_spec <- recipe(value ~ ., data = training(splits))
-```
-
-
-## Workflows
-
-This step will take some time depending on your engine specifications
-
-```{r workflow fit}
-wrkfl_fit_h2o <- workflow() |>
-	add_model(model_spec_h2o) |>
-	add_recipe(rcp_spec) |>
-	fit(training(splits))
-```
-
-```{r leader}
-wrkfl_fit_h2o |> automl_leaderboard() |> head(20)
-```
-
-
-## Calibration, Evaluation & Plotting
-
-Function to calibrate models, evaluate their accuracy and plot results
-```{r function}
-calibrate_evaluate_plot <- function(
-		..., splits, actual_data, type = "testing", updated_desc = NULL
-) {
-	
-	if (type == "testing") {
-		new_data <- testing(splits)
-	} else {
-		new_data <- training(splits) |> drop_na()
-	}
-	
-	calibration_tbl <- modeltime_table(...)
-	
-	if (!is.null(updated_desc)) {
-		for (i in seq_along(updated_desc)) {
-			calibration_tbl <- calibration_tbl |> 
-				update_model_description(.model_id = i, .new_model_desc = updated_desc[i])
-		}
-	}
-	
-	calibration_tbl <- calibration_tbl |> 
-		modeltime_calibrate(new_data)
-	
-	print(calibration_tbl |> modeltime_accuracy())
-	
-	print(
-		calibration_tbl |> 
-			modeltime_forecast(new_data = new_data, actual_data = actual_data) %>%
-			plot_modeltime_forecast(.conf_interval_show = FALSE, .interactive = FALSE)
-	)
-	
-	return(invisible(calibration_tbl))
-	
-}
-```
-
-
-```{r evaluation, fig.align='center'}
-calibrate_evaluate_plot(
-	wrkfl_fit_h2o, 
-	splits = splits, 
-	actual_data = m4_ts_prep
+```{r h2o automl}
+model_h2o_automl <- h2o.automl(
+	y = target, x = x_vars,
+	training_frame = train_h2o,
+	max_runtime_secs = 10,
+	max_runtime_secs_per_model = 10,
+	max_models = 50,
+	nfolds = 5,
+	sort_metric = "rmse",
+	verbosity = NULL,
+	seed = 123
 )
 ```
+
+
+## Model Evaluation
+
+The best model is extracted from the AutoML object and evaluated both on the 
+train and the test sets.   
+
+```{r h2o leaderboard}
+leader_board <- h2o.get_leaderboard(model_h2o_automl)
+head(leader_board, 10)[, 1:2]
+tail(leader_board, 10)[, 1:2]
+```
+
+```{r h2o best model}
+h2o_best <- h2o.get_best_model(model_h2o_automl)
+h2o_best
+```
+
+The performance of the best model on the train set is given by  
+
+```{r h2o train performance}
+h2o.performance(h2o_best, train_h2o)
+```
+![](img/ts_fit.png){align=center}	 
+
+while the performance on the test set is  
+
+```{r h2o test performance}
+h2o.performance(h2o_best, test_h2o)
+```
+![](img/ts_pred.png){align=center}  
 
 
 
 # XAI
 
+In the context of time series forecasting, being able to understand the model's
+predictions is of paramount importance for 3 main reasons:  
+
+1. **Trust**: to be able to trust the model's predictions, especially 
+when it is used to make important future decisions.  
+
+2. **Improvement**: to be able to understand the model's weaknesses to improve it.  
+
+3. **Combine**: usually model's predictions are combined with human judgement, 
+so understanding what causes such predictions is crucial for business experts to
+adjust their forecasts.  
+
+Given the fact that AutoML models are black-boxes, we would like to better 
+understand why the model is predicting what it is predicting. To do so, it is 
+possible to use the **DALEX** package, from [Dr. Why AI](https://dalex.drwhy.ai/), 
+which allows to easily adopt several model explainability techniques, from 
+global to local ones, to obtain an in-depth analysis of the model's results.   
+
+
 ## Explainer
 
-```{r explainer}
+Using **DALEX** is almost straightforward since it is model agnostic and it 
+interfaces with most of ML and DL frameworks (scikit-learn, keras, tensorflow,
+h2o, tidymodels, mlr) through the **DALEXtra** extension.  
+First, it is necessary to create a **DALEX explainer**  
+
+```{r explainer, eval=FALSE}
 explainer_h2o_automl <- explain_h2o(
-	model = wrkfl_fit_h2o$fit$fit, 
-	data = testing(splits),
+	model = h2o_best, 
+	data = select(testing(splits), -date, -value),
 	y = testing(splits)$value,
 	label = "h2o automl",
 	type = "regression",
@@ -260,102 +293,134 @@ explainer_h2o_automl <- explain_h2o(
 ```
 
 
-## Model Performance
+## Global Explanations
 
-```{r model performance, fig.align='center'}
-mp_h2o_automl <- model_performance(explainer_h2o_automl)
-plot(mp_h2o_automl, geom = "boxplot")
-```
+Then, it is possible to use the explainer to obtain **global explanations** of 
+the model.  
 
+### Feature Importance
 
-## Feature Importance
-
-```{r feature importance, fig.align='center'}
+```{r feature importance, eval=FALSE}
 fe_h2o_automl <- model_parts(explainer_h2o_automl)
 plot(fe_h2o_automl)
 ```
+![](img/xai_global_featimp.png){align=center}  
 
+### Partial Dependence
 
-## Variable Response
-
-There are two main types of plots: Partial Dependence plot and Accumulated 
-Local Effects plot designed for the sake of exploring the relation between a 
-variable with the model outcome (in our case: year_of_birth)
-
-Partial Dependence
-```{r partial dependence, fig.align='center'}
+```{r partial dependence, eval=FALSE}
 pdp_h2o_automl <- model_profile(
 	explainer_h2o_automl, 
-	variable = "hour", 
+	variable = c("hour", "wday"),  
 	type = "partial"
 )
 plot(pdp_h2o_automl)
 ```
+![](img/xai_global_partdep.png){align=center} 
 
 
-Accumulated Local Effect
-```{r accumulated effect, fig.align='center'}
-ale_h2o_automl <- model_profile(
-	explainer_h2o_automl,
-	variable = "hour", 
-	type = "accumulated"
-)
-plot(ale_h2o_automl)
+## Local Explanations
+
+It is possible to use the explainer to obtain also **local explanations**. In this 
+case it is necessary to specify an observation to be explained. In the context 
+of time series forecasting, one may explore test observations to inspect what 
+will produce future values.  
+Here, in particular, I concentrated on test observations where the model is
+failing, that is  
+
+- in the **afternoon** of the **23rd of July 2017** and  
+
+- in the **first hours** of the **23th of July 2017** and **24th of July 2017**,  
+
+possibly suggesting that the model is not correctly capturing intra-day dynamics.  
+(The results for the first hours of the 23 and 24 of July are almost the same)  
+
+```{r test obs, eval=FALSE}
+new_value_2h <- testing(splits) |> filter(date == ymd_hms("2017-07-23 02:00:00"))
+new_value_4h <- testing(splits) |> filter(date == ymd_hms("2017-07-24 04:00:00"))
+new_value_15h <- testing(splits) |> filter(date == ymd_hms("2017-07-23 15:00:00"))
 ```
 
+### Break Down
 
-## Prediction Understanding
-
-```{r test obs}
-new_value <- testing(splits) |> 
-	filter(date == ymd_hms("2017-07-23 02:00:00"))
-# new_value <- testing(splits) |> 
-# 	filter(date == ymd_hms("2017-07-24 04:00:00"))
-```
-
-
-Break Down
-https://medium.com/responsibleml/basic-xai-with-dalex-part-4-break-down-method-2cd4de43abdd
-```{r break down, fig.align='center'}
-pb_h2o_automl <- predict_parts(
+```{r break down, eval=FALSE}
+bd_h2o_automl <- predict_parts(
 	explainer_h2o_automl,
-	new_observation = new_value,
+	new_observation = new_value_xh,
 	type = "break_down"
 )
-plot(pb_h2o_automl)
+plot(bd_h2o_automl)
 ```
+![Observation: 2017-07-23 15:00:00](img/xai_local_breakdown_15h.png){align=center}  
 
+![Observation: 2017-07-24 04:00:00](img/xai_local_breakdown_4h.png){align=center}  
 
-Shap
-https://medium.com/responsibleml/basic-xai-with-dalex-part-5-shapley-values-85ceb4b58c99
-```{r shap, fig.align='center'}
+### Shapley Values
+
+```{r shap, eval=FALSE}
 shap_h2o_automl <- predict_parts(
 	explainer_h2o_automl,
-	new_observation = new_value,
+	new_observation = new_value_xh,
 	type = "shap"
 )
 plot(shap_h2o_automl)
 ```
+![Observation: 2017-07-23 15:00:00](img/xai_local_shap_15h.png){align=center}  
 
+![Observation: 2017-07-24 04:00:00](img/xai_local_shap_4h.png){align=center}  
 
-Lime
-https://medium.com/responsibleml/basic-xai-with-dalex-part-6-lime-method-f6aab0af058a
+### Lime
 
-```{r lime, fig.align='center'}
+```{r lime, eval=FALSE}
 model_type.dalex_explainer <- DALEXtra::model_type.dalex_explainer
 predict_model.dalex_explainer <- DALEXtra::predict_model.dalex_explainer
 
 lime_h2o_automl <- predict_surrogate(
 	explainer = explainer_h2o_automl, 
-	new_observation = new_value, 
-	n_features = 12, 
+	new_observation = new_value_xh, 
+	n_features = 10, 
 	n_permutations = 1000,
 	type = "lime"
 )
 plot(lime_h2o_automl)
 ```
+![Observation: 2017-07-23 15:00:00](img/xai_local_lime_15h.png){align=center}  
+
+![Observation: 2017-07-24 04:00:00](img/xai_local_lime_4h.png){align=center}  
 
 
-```{r h2o shut}
+### Ceteris Paribus
+
+```{r ceteris paribus, eval=FALSE}
+cetp_h2o_automl <- predict_profile(
+	explainer = explainer_h2o_automl, 
+	new_observation = new_value_xh,
+	type = "ceteris_paribus",
+	variables = c("hour", "wday")
+)
+plot(cetp_h2o_automl, variables = c("hour", "wday"))
+```
+![Observation: 2017-07-23 15:00:00](img/xai_local_cetpar_15h.png){align=center}   
+
+![Observation: 2017-07-24 04:00:00](img/xai_local_cetpar_4h.png){align=center}  
+
+### Stability Analysis
+
+```{r stability, eval=FALSE}
+preddiag_h2o_automl <- predict_diagnostics(
+	explainer = explainer_h2o_automl, 
+	new_observation = new_value,
+	variables = c("hour", "wday")
+)
+plot(preddiag_h2o_automl, variables = c("hour", "wday"))
+```
+![Observation: 2017-07-23 15:00:00](img/xai_local_stab_15h.png){align=center}  
+
+![Observation: 2017-07-24 04:00:00](img/xai_local_stab_4h.png){align=center}  
+
+
+Finally, remember to shut down the h2o cluster.  
+
+```{r h2o shutdown}
 h2o.shutdown(prompt = FALSE)
 ```

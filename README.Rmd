@@ -13,13 +13,12 @@ knitr::opts_chunk$set(
 
 # XAI-timeseries
 
-Repository containing the code for the project of the Explainable AI for 
-Business course. 
+Repository containing the code for the project of the Explainable AI for Business.   
 
 [R code](R/xai_ts.R)  
 
-[Report (qmd)](report/xai_ts_report.qmd)
+[Report (qmd)](report/xai_ts_report.qmd)  
 
-[Report (html)](https://marcozanotti.github.io/XAI-timeseries/report/xai_ts_report.html)
+[Report (html)](https://marcozanotti.github.io/XAI-timeseries/report/xai_ts_report.html)  
 
-[Presentation](https://marcozanotti.github.io/XAI-timeseries/report/xai_ts_pres.pdf)
+[Presentation](https://marcozanotti.github.io/XAI-timeseries/report/xai_ts_pres.pdf)  

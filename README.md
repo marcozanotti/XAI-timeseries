@@ -4,7 +4,7 @@
 # XAI-timeseries
 
 Repository containing the code for the project of the Explainable AI for
-Business course.
+Business.
 
 [R code](R/xai_ts.R)
 

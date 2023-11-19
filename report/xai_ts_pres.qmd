@@ -140,27 +140,27 @@ explainability techniques, such as:
 ![](img/xai_global_partdep.png){align=center}
 
 
-## Local - Break Down
+## Local - Break Down (observation: 2017-07-24 04:00:00)
 
 ![](img/xai_local_breakdown_4h.png){align=center}
 
 
-## Local - Shapley Values
+## Local - Shapley Values (observation: 2017-07-24 04:00:00)
 
 ![](img/xai_local_shap_4h.png){align=center}
 
 
-## Local - LIME
+## Local - LIME (observation: 2017-07-24 04:00:00)
 
 ![](img/xai_local_lime_4h.png){align=center}
 
 
-## Local - Ceteris Paribus
+## Local - Ceteris Paribus (observation: 2017-07-24 04:00:00)
 
 ![](img/xai_local_cetpar_4h.png){align=center}
 
 
-## Local - Stability Analysis
+## Local - Stability Analysis (observation: 2017-07-24 04:00:00)
 
 ![](img/xai_local_stab_4h.png){align=center}
 

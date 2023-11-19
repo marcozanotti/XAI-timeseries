@@ -1,7 +1,7 @@
 ---
 title: "XAI on Time Series Forecasting"
 author: "Marco Zanotti"
-date: "2023-11-10"
+date: "2023-11-20"
 format: 
   html:
     embed-resources: true
@@ -206,12 +206,26 @@ base models and ensembles using subsets of the base models)
 All this models are estimated using a 5-fold cross validation (since the data
 in not too large) and the best model is selected based on the RMSE metric.  
 
-```{r h2o automl}
+```{r h2o automl 1, include=FALSE}
 model_h2o_automl <- h2o.automl(
 	y = target, x = x_vars,
 	training_frame = train_h2o,
 	max_runtime_secs = 10,
 	max_runtime_secs_per_model = 10,
+	max_models = 50,
+	nfolds = 5,
+	sort_metric = "rmse",
+	verbosity = NULL,
+	seed = 123
+)
+```
+
+```{r h2o automl 2, eval=FALSE}
+model_h2o_automl <- h2o.automl(
+	y = target, x = x_vars,
+	training_frame = train_h2o,
+	max_runtime_secs = 120,
+	max_runtime_secs_per_model = 30,
 	max_models = 50,
 	nfolds = 5,
 	sort_metric = "rmse",
@@ -295,10 +309,17 @@ explainer_h2o_automl <- explain_h2o(
 
 ## Global Explanations
 
-Then, it is possible to use the explainer to obtain **global explanations** of 
-the model.  
+Then, it is possible to use the explainer to obtain dataset-level or 
+**global explanations** of the model. This analysis helps to understand how the 
+model predictions perform overall, for an entire set of observations. Hence, 
+assuming that the observations form a representative sample from a general 
+population, global explainers can provide information about the quality of 
+predictions for the population.  
 
 ### Feature Importance
+
+First, we can inspect the **feature importance** of the model, that is the 
+relevance of each feature in the model's predictions.  
 
 ```{r feature importance, eval=FALSE}
 fe_h2o_automl <- model_parts(explainer_h2o_automl)
@@ -308,6 +329,14 @@ plot(fe_h2o_automl)
 
 ### Partial Dependence
 
+Then, we can inspect the **partial dependence** of the model, that shows how 
+does the expected value of model prediction behave as a function of a selected 
+explanatory variable. Hence, it is a simple way to summarize the effect of a 
+particular explanatory variable on the dependent variable. Moreover, this tool 
+is very useful to understand the model performance at boundaries (since models 
+may have strange behaviours at the boundaries of the possible range of a 
+variable).  
+
 ```{r partial dependence, eval=FALSE}
 pdp_h2o_automl <- model_profile(
 	explainer_h2o_automl, 
@@ -316,23 +345,35 @@ pdp_h2o_automl <- model_profile(
 )
 plot(pdp_h2o_automl)
 ```
-![](img/xai_global_partdep.png){align=center} 
+![](img/xai_global_partdep.png){align=center}  
+
+### Global Results
+
+As shown by the **Feature Importance** plot, the most important features are 
+those related to **daily seasonality**, while weekly and monthly seasonality seem 
+to be irrelevant. The **day of the week** is also of great importance.  
+
+The PD for the **hour** and the **day of the week** variables reveals a clear 
+intra-day pattern, with higher predictions during the night, and a downward
+trending effect within the week (where wday = 1 means Sunday).  
 
 
 ## Local Explanations
 
-It is possible to use the explainer to obtain also **local explanations**. In this 
-case it is necessary to specify an observation to be explained. In the context 
-of time series forecasting, one may explore test observations to inspect what 
-will produce future values.  
-Here, in particular, I concentrated on test observations where the model is
-failing, that is  
+It is possible to use the explainer to obtain also instance-level or 
+**local explanations**, helping understand how a model yields a prediction for 
+a particular single observation. Indeed, in this case it is necessary to specify 
+an observation to be explained. In the context of time series forecasting, one 
+may explore test observations to inspect how future values are produced by the 
+model.  
+Here, in particular, I focused on test observations where the model is failing, 
+that is  
 
 - in the **afternoon** of the **23rd of July 2017** and  
 
 - in the **first hours** of the **23th of July 2017** and **24th of July 2017**,  
 
-possibly suggesting that the model is not correctly capturing intra-day dynamics.  
+possibly suggesting that the model is not completely capturing intra-day dynamics.  
 (The results for the first hours of the 23 and 24 of July are almost the same)  
 
 ```{r test obs, eval=FALSE}
@@ -342,6 +383,13 @@ new_value_15h <- testing(splits) |> filter(date == ymd_hms("2017-07-23 15:00:00"
 ```
 
 ### Break Down
+
+In the context of local explainability, one of the main questions that one may 
+want to answer is "which variables contribute to this result the most?", and 
+several different approaches have been proposed to address this issue. 
+The **break-down** method shows how the contributions attributed to individual 
+explanatory variables change the mean model’s prediction to yield the actual 
+prediction for a particular single instance.  
 
 ```{r break down, eval=FALSE}
 bd_h2o_automl <- predict_parts(
@@ -355,7 +403,12 @@ plot(bd_h2o_automl)
 
 ![Observation: 2017-07-24 04:00:00](img/xai_local_breakdown_4h.png){align=center}  
 
-### Shapley Values
+### SHAP
+
+**SHapley Additive exPlanations** (SHAP) is another method used to understand what 
+variables contributed the most to a particular prediction and it is based on 
+Shapley values from game theory.  
+
 
 ```{r shap, eval=FALSE}
 shap_h2o_automl <- predict_parts(
@@ -370,6 +423,17 @@ plot(shap_h2o_automl)
 ![Observation: 2017-07-24 04:00:00](img/xai_local_shap_4h.png){align=center}  
 
 ### Lime
+
+Break-down (BD) plots and Shapley values are most suitable for models with a 
+small or moderate number of explanatory variables. None of those approaches is 
+well-suited for models with a very large number of explanatory variables, 
+because they usually determine non-zero attributions for all variables in the 
+model. However, when the number of explanatory variables is huge, **sparse 
+explanations** with a small number of variables may offer a useful alternative. 
+The most popular of such sparse explainers is the **Local Interpretable 
+Model-agnostic Explanations** (LIME) method. The key idea behind it is to 
+locally approximate a black-box model by a simpler and easy to interpret linear 
+regression model.  
 
 ```{r lime, eval=FALSE}
 model_type.dalex_explainer <- DALEXtra::model_type.dalex_explainer
@@ -388,8 +452,25 @@ plot(lime_h2o_automl)
 
 ![Observation: 2017-07-24 04:00:00](img/xai_local_lime_4h.png){align=center}  
 
+However, the LIME method is not well suited for time series data, because there 
+are several important limitations in case of tabular data. In particular, there 
+have been various proposals for finding interpretable representations for 
+continuous and categorical explanatory variables but the issue has not been 
+solved yet.  
 
 ### Ceteris Paribus
+
+The previous local explainability methods quantified the importance of 
+explanatory variables in the context of a single-instance prediction and their 
+application yields a decomposition of the prediction into components that can 
+be attributed to particular variables.  
+**Ceteris Paribus**, instead, is a method that evaluates the effect of a selected 
+explanatory variable in terms of changes of a model’s prediction induced by 
+changes in the variable’s values. The method is based on the ceteris paribus 
+principle, that is it examines the influence of an explanatory variable by 
+assuming that the values of all other variables do not change (i.e. the 
+dependence of the conditional expectation of the dependent variable on the 
+values of the particular explanatory variable).    
 
 ```{r ceteris paribus, eval=FALSE}
 cetp_h2o_automl <- predict_profile(
@@ -406,11 +487,24 @@ plot(cetp_h2o_automl, variables = c("hour", "wday"))
 
 ### Stability Analysis
 
+It may happen that, despite the fact that the predictive performance of a model 
+is satisfactory overall, the model’s predictions for some observations are 
+drastically worse. For example, a model developed to forecast product demand 
+may perform well during spring and may not in autumn. In this case, it is 
+worthwhile to check how does the model behave locally for observations similar 
+to the instance of interest and the **Local-stability** analysis allows to 
+assess the (local) stability of predictions around the observation of interest. 
+It is based first on the identification of a set of neighbors for the observation 
+of interest and then on the comparison of ceteris paribus profiles for selected 
+explanatory variables.  
+
 ```{r stability, eval=FALSE}
 preddiag_h2o_automl <- predict_diagnostics(
 	explainer = explainer_h2o_automl, 
-	new_observation = new_value,
-	variables = c("hour", "wday")
+	new_observation = new_value_xh,
+	variables = c("hour", "wday"),
+	neighbors = 50,
+  distance = gower::gower_dist
 )
 plot(preddiag_h2o_automl, variables = c("hour", "wday"))
 ```
@@ -418,9 +512,23 @@ plot(preddiag_h2o_automl, variables = c("hour", "wday"))
 
 ![Observation: 2017-07-24 04:00:00](img/xai_local_stab_4h.png){align=center}  
 
+### Local Results
+
+<!-- 
+comments on the local explainability results
+
+stability:
+The profiles are relatively close to each other, suggesting the stability of 
+predictions. There are more negative than positive residuals, which may be seen as 
+a signal of a (local) positive bias of the predictions.
+The profiles are not parallel, indicating non-additivity of the effect.
+ -->
+
+
 
 Finally, remember to shut down the h2o cluster.  
 
 ```{r h2o shutdown}
 h2o.shutdown(prompt = FALSE)
 ```
+

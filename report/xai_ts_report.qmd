@@ -514,17 +514,24 @@ plot(preddiag_h2o_automl, variables = c("hour", "wday"))
 
 ### Local Results
 
-<!-- 
-comments on the local explainability results
+The Break Down, Shapley values and LIME yield all very similar results. However,
+the **Break Down** method is the only one that allows to quantify the contribution
+of the variables to the prediction. Hence, it is the most useful for the purpose
+of explaining how a prediction has been produced by the models within a business
+forecasting process. For instance, in the case of the early morning prediction, 
+the hour, the daily seasonality but also the week are all very relevant.  
 
-stability:
-The profiles are relatively close to each other, suggesting the stability of 
-predictions. There are more negative than positive residuals, which may be seen as 
-a signal of a (local) positive bias of the predictions.
-The profiles are not parallel, indicating non-additivity of the effect.
- -->
+Finally, the **Stability Analysis** shows that the profiles are not relatively 
+close to each other, suggesting some "instability" of predictions.  
+Moreover, there are very positive residuals in the morning, suggesting that the
+model is on average underestimating the demand in the morning, while there are 
+more negative residuals in the afternoon and evening, implying that the model 
+is on average overestimating the demand in that part of the day. This information
+is extremely useful for the judgemental forecasting adjustment business experts 
+may adopt to improve business results.  
 
 
+----
 
 Finally, remember to shut down the h2o cluster.  
 

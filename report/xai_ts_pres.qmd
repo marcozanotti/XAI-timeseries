@@ -126,7 +126,7 @@ explainability techniques, such as:
 - Break Down  
 - Shapley Values  
 - LIME  
-- Ceteris Paribus and  
+<!-- - Ceteris Paribus and   -->
 - Stability Analysis.
 
 
@@ -155,9 +155,9 @@ explainability techniques, such as:
 ![](img/xai_local_lime_4h.png){align=center}
 
 
-## Local - Ceteris Paribus (observation: 2017-07-24 04:00:00)
+<!-- ## Local - Ceteris Paribus (observation: 2017-07-24 04:00:00) -->
 
-![](img/xai_local_cetpar_4h.png){align=center}
+<!-- ![](img/xai_local_cetpar_4h.png){align=center} -->
 
 
 ## Local - Stability Analysis (observation: 2017-07-24 04:00:00)
@@ -170,7 +170,19 @@ explainability techniques, such as:
 
 ## Conclusions
 
+- The most important features are those related to **daily seasonality**, 
+while weekly and monthly seasonality seem to be less relevant. 
 
+- There is a clear **intra-day pattern**, with higher predictions during the night, 
+and a downward trending effect within the week.  
+
+- The **Break Down** method is the most useful within business contexts since it 
+allows to quantify the contribution of each feature to the final predictions.  
+
+- Predictions are relatively **unstable**. The model is underestimating the 
+demand in the morning and overestimating it in the afternoon and evening and 
+judgemental forecasting procedures should take this into account to adjust 
+business predictions.  
 
 
 ##

@@ -2877,30 +2877,30 @@ $ cos24_K2  &lt;dbl&gt; 8.660254e-01, 1.000000e+00, 8.660254e-01, 5.000000e-01, 
 <span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a><span class="fu">head</span>(leader_board, <span class="dv">10</span>)[, <span class="dv">1</span><span class="sc">:</span><span class="dv">2</span>]</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <div class="cell-output cell-output-stdout">
 <pre><code>                                          model_id      rmse
-1                   GBM_2_AutoML_1_20231119_152453 0.3357411
-2                   GBM_4_AutoML_1_20231119_152453 0.3389956
-3  XGBoost_grid_1_AutoML_1_20231119_152453_model_2 0.3418421
-4                   GBM_3_AutoML_1_20231119_152453 0.3441333
-5                   GBM_5_AutoML_1_20231119_152453 0.3497250
-6  XGBoost_grid_1_AutoML_1_20231119_152453_model_1 0.3575881
-7               XGBoost_3_AutoML_1_20231119_152453 0.3650229
-8               XGBoost_1_AutoML_1_20231119_152453 0.3672501
-9               XGBoost_2_AutoML_1_20231119_152453 0.3698911
-10                  DRF_1_AutoML_1_20231119_152453 0.3753290</code></pre>
+1                   GBM_2_AutoML_1_20231222_114747 0.3357411
+2                   GBM_4_AutoML_1_20231222_114747 0.3389956
+3  XGBoost_grid_1_AutoML_1_20231222_114747_model_2 0.3418421
+4                   GBM_3_AutoML_1_20231222_114747 0.3441333
+5                   GBM_5_AutoML_1_20231222_114747 0.3497250
+6  XGBoost_grid_1_AutoML_1_20231222_114747_model_1 0.3575881
+7               XGBoost_3_AutoML_1_20231222_114747 0.3650229
+8               XGBoost_1_AutoML_1_20231222_114747 0.3672501
+9               XGBoost_2_AutoML_1_20231222_114747 0.3698911
+10                  DRF_1_AutoML_1_20231222_114747 0.3753290</code></pre>
 </div>
 <div class="sourceCode cell-code" id="cb13"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a><span class="fu">tail</span>(leader_board, <span class="dv">10</span>)[, <span class="dv">1</span><span class="sc">:</span><span class="dv">2</span>]</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <div class="cell-output cell-output-stdout">
 <pre><code>                                          model_id      rmse
-1  XGBoost_grid_1_AutoML_1_20231119_152453_model_1 0.3575881
-2               XGBoost_3_AutoML_1_20231119_152453 0.3650229
-3               XGBoost_1_AutoML_1_20231119_152453 0.3672501
-4               XGBoost_2_AutoML_1_20231119_152453 0.3698911
-5                   DRF_1_AutoML_1_20231119_152453 0.3753290
-6  XGBoost_grid_1_AutoML_1_20231119_152453_model_3 0.3765141
-7                   XRT_1_AutoML_1_20231119_152453 0.3795674
-8                   GBM_1_AutoML_1_20231119_152453 0.3910087
-9                   GLM_1_AutoML_1_20231119_152453 0.4575652
-10         DeepLearning_1_AutoML_1_20231119_152453 0.5011931</code></pre>
+1  XGBoost_grid_1_AutoML_1_20231222_114747_model_1 0.3575881
+2               XGBoost_3_AutoML_1_20231222_114747 0.3650229
+3               XGBoost_1_AutoML_1_20231222_114747 0.3672501
+4               XGBoost_2_AutoML_1_20231222_114747 0.3698911
+5                   DRF_1_AutoML_1_20231222_114747 0.3753290
+6  XGBoost_grid_1_AutoML_1_20231222_114747_model_3 0.3765141
+7                   XRT_1_AutoML_1_20231222_114747 0.3795674
+8                   GBM_1_AutoML_1_20231222_114747 0.3910087
+9                   GLM_1_AutoML_1_20231222_114747 0.4575652
+10         DeepLearning_1_AutoML_1_20231222_114747 0.4979162</code></pre>
 </div>
 </div>
 <div class="cell">
@@ -2911,10 +2911,10 @@ $ cos24_K2  &lt;dbl&gt; 8.660254e-01, 1.000000e+00, 8.660254e-01, 5.000000e-01, 
 ==============
 
 H2ORegressionModel: gbm
-Model ID:  GBM_2_AutoML_1_20231119_152453 
+Model ID:  GBM_2_AutoML_1_20231222_114747 
 Model Summary: 
   number_of_trees number_of_internal_trees model_size_in_bytes min_depth
-1              53                       53               25673         7
+1              53                       53               25669         7
   max_depth mean_depth min_leaves max_leaves mean_leaves
 1         7    7.00000         14         51    33.88679
 
@@ -3192,15 +3192,10 @@ Here, in particular, I focused on test observations where the model is failing, 
 </section>
 <section id="local-results" class="level3">
 <h3 class="anchored" data-anchor-id="local-results">Local Results</h3>
-<!-- 
-comments on the local explainability results
-
-stability:
-The profiles are relatively close to each other, suggesting the stability of 
-predictions. There are more negative than positive residuals, which may be seen as 
-a signal of a (local) positive bias of the predictions.
-The profiles are not parallel, indicating non-additivity of the effect.
- -->
+<p>The Break Down, Shapley values and LIME yield all very similar results. However, the <strong>Break Down</strong> method is the only one that allows to quantify the contribution of the variables to the prediction. Hence, it is the most useful for the purpose of explaining how a prediction has been produced by the models within a business forecasting process. For instance, in the case of the early morning prediction, the hour, the daily seasonality but also the week are all very relevant.</p>
+<p>Finally, the <strong>Stability Analysis</strong> shows that the profiles are not relatively close to each other, suggesting some “instability” of predictions.<br>
+Moreover, there are very positive residuals in the morning, suggesting that the model is on average underestimating the demand in the morning, while there are more negative residuals in the afternoon and evening, implying that the model is on average overestimating the demand in that part of the day. This information is extremely useful for the judgemental forecasting adjustment business experts may adopt to improve business results.</p>
+<hr>
 <p>Finally, remember to shut down the h2o cluster.</p>
 <div class="cell">
 <div class="sourceCode cell-code" id="cb30"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb30-1"><a href="#cb30-1" aria-hidden="true" tabindex="-1"></a><span class="fu">h2o.shutdown</span>(<span class="at">prompt =</span> <span class="cn">FALSE</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
